@@ -1,0 +1,147 @@
+options:
+  debug:
+    type: boolean
+    default: False
+    description: "Enable debug logging."
+  verbose:
+    type: boolean
+    default: False
+    description: "Enable verbose logging."
+  proxy:
+    type: string
+    description: "A http proxy to use when downloading installers"
+  openstack-version:
+    type: string
+    default: queens
+    description: |
+      Version of OpenStack Nova Compute to install. Choices are:
+       * newton
+       * ocata
+       * pike
+       * queens
+  ad-computer-group:
+    type: string
+    default: "nova-group"
+    description: "Computer group that will be joined after adding AD relation."
+  ad-user:
+    type: string
+    default: "nova-user"
+    description: "User that will created after adding AD relation."
+  ad-ou:
+    type: string
+    description: "Organizational unit container used after joining AD domain."
+  installer-url:
+    type: string
+    description: |
+      Overwrite default installer location. Take care to set the correct openstack-version
+      as that will be used by the charm to pick the correct config templates.
+      If you use this option, you may enable file integrity checking by specifying
+      an md5sum at the end of the URL as follows:
+        https://example.com/installer.msi#md5=<hash>
+  enable-cluster-driver:
+    type: boolean
+    default: True
+    description: |
+      Enables the Hyper-V compute driver for clustering. This requires at least two Hyper-V compute
+      joined to a cluster.
+      NOTE: Available only in releases >= Mitaka
+  csv-performance-size:
+    type: int
+    description: |
+      Represents the size in gigabytes occupied by the CSV requested from the s2d-proxy charm on
+      the Performance tier. In a Hyper-Converged scenario, each nova-hyperv unit requests a CSV to
+      store the virtual machines.
+      When the above is requested from the s2d-proxy charm, if there's is enough available
+      space in the Performance tier, the volume will be created.
+      NOTE: If you optionally specify 'csv-capacity-size', then that requirement must be fullfiled
+      as well.
+  csv-capacity-size:
+    type: int
+    description: |
+      Represents the size in gigabytes occupied by the CSV requested from the s2d-proxy charm on the Capacity tier.
+      NOTE: Please, also look at the 'csv-performance-size' config option, above as these configuration options
+      are used together.
+  ovs-installer-url:
+    type: string
+    description: |
+      Download URL of the OVS MSI installer.
+  os-data-network:
+    type: string
+    description: |
+      The IP address and netmask of the OpenStack Data network (e.g.: 192.168.0.0/24).
+      This network will be used for tenant network traffic in overlay networks.
+      NOTE: If ovs is selected as the network type, this option overrides
+      data-port. OVS on Windows requires that the os data network be set on a NIC.
+      That means that if an interface has an IP in the os-data-network
+      range, that interface will be added to the vmswitch. There is a caveat here.
+      If os-data-network is on a different interface then data-port, it might result
+      in the hyper-v compute nodes not being able to use VLAN network segregation.
+  rabbit-user:
+    type: string
+    default: nova
+    description: Username used to access rabbitmq queue.
+  rabbit-vhost:
+    type: string
+    default: openstack
+    description: Rabbitmq vhost.
+  data-port:
+    type: string
+    description: |
+      Ethernet interface to use for vmswitch. This can be a MAC address or an interface name.
+      This option is mandatory if more then one interface is present on the target system.
+      In cases where there is only one interface on the system, the vmswitch will be created using that
+      interface and OSManagement will be set to True, regardless of the vmswitch-management option.
+      Avoid using the management interface as a data interface where system has more then one NIC.
+  vmswitch-name:
+    type: string
+    description: |
+      Name of the Hyper-V virtual switch. Defaults to 'br100'.
+  vmswitch-management:
+    type: boolean
+    default: False
+    description: |
+      Allow management OS on this vm switch. If True, the switch will be set in DHCP mode.
+  log-dir:
+    type: string
+    description: |
+      Log folder location. Defaults to '<system_drive_letter>:\OpenStack\Log'.
+  instances-dir:
+    type: string
+    description: |
+      Location in which to store VM disks.
+      Defaults to '<system_drive_letter>:\OpenStack\Instances'.
+  network-type:
+    type: string
+    default: hyperv
+    description: |
+      Neutron agent to use. Valid options are:
+        * hyperv
+        * ovs
+  max-concurrent-live-migrations:
+    type: int
+    default: 1
+    description: "Maximum concurrent live migrations."
+  limit-cpu-features:
+    type: boolean
+    default: False
+    description: |
+      This flag is needed to support live migration to hosts with different
+      CPU features and checked during instance creation in order to limit
+      the CPU features used by the instance.
+  change-hostname:
+    type: boolean
+    default: False
+    description: |
+      The hostname set inside the newly spawned machine is usually the same as
+      the name of the instance being spawned. In cases where the instance name
+      is larger then 15 characters (maximum size for windows NetBios names), the
+      instance name gets truncated to the first 15 characters. This creates a problem,
+      as hostnames in active directory, for example, are very important. Having more
+      then one machine with the same hostname try to join the same domain, will
+      create trust issues.
+      This option allows changing the hostname of the current running system to a
+      combination of the first 14 (or less, depending on how many digits the unit number has)
+      characters of the charm name and the unit number. While this is not infallible,
+      It does have less of a chance of creating hostname conflicts.
+
+    
