@@ -143,11 +143,17 @@ options:
       combination of the first 14 (or less, depending on how many digits the unit number has)
       characters of the charm name and the unit number. While this is not infallible,
       It does have less of a chance of creating hostname conflicts.
-  ssl_ca:
+  ssl-ca:
     type: string
     default:
     description: |
       base64-encoded SSL CA to use with the certificate and key provided -
       this is only required if you are providing a privately signed ssl_cert
       and ssl_key.
+  format-raw-devices:
+    type: boolean
+    default: False
+    description: |
+      When True will format and initialize all existing raw devices.
+      It will not touch the OS drive or drives that already have a partition table.
     
