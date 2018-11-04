@@ -652,6 +652,12 @@ function Get-CharmConfigContext {
             New-Item -ItemType Directory -Path $dir
         }
     }
+    if($ctxt['ssl_ca']) {
+        $ca_pem = [System.Text.Encoding]::ASCII.GetString([System.Convert]::FromBase64String($ctxt['ssl_ca']))
+        $ca_file = Join-Path $NOVA_INSTALL_DIR "etc\ca.pem"
+        $ca_pem | Set-Content $ca_file
+        $ctxt['ssl_ca_file'] = $ca_file
+    }
     return $ctxt
 }
 
