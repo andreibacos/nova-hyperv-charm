@@ -427,8 +427,16 @@ function Get-FreeRDPContext {
         "html5_proxy_base_url" = $null
     }
     $ctx = Get-JujuRelationContext -Relation "free-rdp" -RequiredContext $required
+
     if (!$ctx.Count) {
+        Write-JujuWarning "FreeRDP relation not complete"
         return @{}
+    }
+    $cfg = Get-JujuCharmConfig
+    if ($cfg['local-freerdp']) {
+    	$url = [System.Uri]$ctx["html5_proxy_base_url"]
+        $ip = Get-JujuUnitPrivateIP
+        $ctx["html5_proxy_base_url"] = "{0}://{1}:{2}" -f @($url.scheme, $ip, $url.port) 
     }
     return $ctx
 }
@@ -770,7 +778,11 @@ function Invoke-InstallHook {
         New-Partition -AssignDriveLetter -UseMaximumSize | `
         Format-Volume -FileSystem NTFS -Confirm:$false
     }
-    
+   
+    if ($cfg['external-ad']) {
+        External-AD-Join
+    }
+ 
     $prereqReboot = Install-Prerequisites
     if ($prereqReboot) {
         Invoke-JujuReboot -Now
@@ -792,17 +804,96 @@ function Invoke-StopHook {
     }
 }
 
+function Add-ServiceLogonRight([string] $Username) {
+    Write-JujuWarning "Enable ServiceLogonRight for $Username"
+
+    $tmp = New-TemporaryFile
+    secedit /export /cfg "$tmp.inf" | Out-Null
+    (gc -Encoding ascii "$tmp.inf") -replace '^SeServiceLogonRight .+', "`$0,$Username" | sc -Encoding ascii "$tmp.inf"
+    secedit /import /cfg "$tmp.inf" /db "$tmp.sdb" | Out-Null
+    secedit /configure /db "$tmp.sdb" /cfg "$tmp.inf" | Out-Null
+    rm $tmp* -ea 0
+}
+
+function External-AD-Join {
+    $cfg = Get-JujuCharmConfig
+    $ad_ip = $cfg['external-ad-ip']
+    $domain = $cfg['external-ad-domain']
+    $username = "{0}\{1}" -f @($domain, $cfg['external-ad-admin-user'])
+    $password = $cfg['external-ad-admin-pass'] | ConvertTo-SecureString -asPlainText -Force
+    $domain_ou = $cfg['external-ad-ou']
+    $domain_group = $cfg['external-ad-group']
+    $service_account = $cfg['external-ad-service-account']
+    $credential = New-Object System.Management.Automation.PSCredential($username,$password)
+
+    Write-JujuWarning "External AD -> Joining External AD domain: $domain"
+    Install-WindowsFeatures -Features @('RSAT-AD-PowerShell')
+    if (!(Confirm-IsInDomain $domain)) {
+        Set-DnsClientServerAddress -InterfaceAlias * -ServerAddresses $ad_ip
+        if($domain_ou) {
+            Write-JujuWarning "External AD -> Joining AD OU: $domain_ou"
+            $join_ad_result = Add-Computer -DomainName $domain -Credential $credential -OUPath $domain_ou -PassThru
+        } else {
+            Write-JujuWarning "External AD -> AD OU not provided"
+	    $join_ad_result = Add-Computer -DomainName $domain -Credential $credential -PassThru
+        }
+        if ($join_ad_result.HasSucceeded){
+            Write-JujuWarning "External AD -> Joined AD domain, rebooting"
+            Invoke-JujuReboot -Now
+        }
+    }
+
+    $computer = Get-ADComputer -Credential $credential (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\ComputerName\ComputerName").ComputerName
+
+    Enable-WSManCredSSP -Role Client -DelegateComputer $computer.name -Force
+
+    Write-JujuWarning "External AD -> adding service account"
+    Add-ADGroupMember -Credential $credential -Identity $domain_group -Members $computer
+#    Add-ADComputerServiceAccount -Identity $computer -ServiceAccount $service_account
+#    Set-ADServiceAccount -Identity $service_account -PrincipalsAllowedToRetrieveManagedPassword $computer
+    Invoke-Command -ComputerName $computer.name -Credential $credential -Authentication Credssp {Install-ADServiceAccount -Identity $service_account}
+#    Install-ADServiceAccount -Identity $service_account
+    Add-LocalGroupMember -Group Administrators -Member "$domain\$service_account$" -ErrorAction SilentlyContinue
+    Set-ADAccountControl -Identity $computer -TrustedToAuthForDelegation $true
+    Add-ServiceLogonRight("$domain\$service_account$")
+
+    Enable-LiveMigration
+    foreach ($s in @("nova-compute", "neutron-hyperv-agent", "neutron-ovs-agent")) { 
+        $service = gwmi win32_service -filter "name='$s'"
+        if ($service.startname.tolower() -ne "$domain\$service_account$".tolower()) {
+            if ($service.state -eq "Running"){
+                $service.stopservice()
+                $service.change($null,$null,$null,$null,$null,$null,"$domain\$service_account$",$null)
+	        $service.startservice()
+            } else {
+                $service.change($null,$null,$null,$null,$null,$null,"$domain\$service_account$",$null)
+            }
+        }
+    }
+    $compute_nodes = Get-ADGroupMember -Identity $domain_group
+    if($compute_nodes -is [system.array]){
+        foreach ($compute in $compute_nodes) {
+            if ( $compute.name -ne $computer.name) {
+                Set-ADObject -Identity $computer -Add @{'msDS-AllowedToDelegateTo' = ('{0}/{1}' -f 'Microsoft Virtual System Migration Service', $compute.name) }
+                Set-ADObject -Identity $computer -Add @{'msDS-AllowedToDelegateTo' = ('{0}/{1}' -f 'cifs', $compute.name) }
+            }
+        }
+    }
+}
+
 function Invoke-ConfigChangedHook {
+    $cfg = Get-JujuCharmConfig
     Start-UpgradeOpenStackVersion
     New-CharmServices
     Enable-MSiSCSI
     Start-ConfigureNeutronAgent
     $adCtxt = Get-ActiveDirectoryContext
-    if(($adCtxt -ne $null) -and ($adCtxt.Count -gt 1) -and (Confirm-IsInDomain $adCtxt['domainName'])) {
+    if(($adCtxt -ne $null) -and ($adCtxt.Count -gt 1) -and (Confirm-IsInDomain $adCtxt['domainName'])){
         Enable-LiveMigration
-        $cfg = Get-JujuCharmConfig
         Set-VMHost -MaximumVirtualMachineMigrations $cfg['max-concurrent-live-migrations'] `
                    -MaximumStorageMigrations $cfg['max-concurrent-live-migrations']
+    } elseif ($cfg['external-ad']) {
+        External-AD-Join
     }
     Set-S2DHealthChecksRelation
     $incompleteRelations = @()

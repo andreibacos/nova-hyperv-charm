@@ -156,4 +156,50 @@ options:
     description: |
       When True will format and initialize all existing raw devices.
       It will not touch the OS drive or drives that already have a partition table.
-    
+  local-freerdp:
+    type: boolean
+    default: False
+    description: |
+      Enabling this means we have a local running freerdp-charm and would like to use it regardless of html5 URL received from relation.
+  external-ad:
+    type: boolean
+    default: False
+    description: |
+      When True will try joining an external AD that is not controlled by juju and is not running the AD charm.
+  external-ad-admin-user:
+    type: string
+    default:
+    description: |
+      External AD admin user used for domain related configuration
+  external-ad-admin-pass:
+    type: string
+    default:
+    description: |
+      External AD admin password used for domain related configuration
+  external-ad-ip:
+    type: string
+    default:
+    description: |
+      External AD ip, this will be set as our new nameserver to perform AD join
+  external-ad-domain:
+    type: string
+    default:
+    description: |
+      External AD domain name
+  external-ad-service-account:
+    type: string
+    default:
+    description: |
+      External AD service account used to run all services
+  external-ad-ou:
+    type: string
+    default:
+    description: |
+      External AD OU this computer will be part of
+  external-ad-group:
+    type: string
+    default:
+    description: |
+      External AD group this computer will be part of
+
+
