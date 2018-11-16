@@ -792,6 +792,11 @@ function Invoke-InstallHook {
 }
 
 function Invoke-StopHook {
+    $cfg = Get-JujuCharmConfig
+    if ($cfg['external-ad']) {
+        External-AD-Leave
+    }
+
     if(!(Get-IsNanoServer)) {
         Disable-OVS
         Uninstall-OVS
@@ -804,17 +809,6 @@ function Invoke-StopHook {
     }
 }
 
-function Add-ServiceLogonRight([string] $Username) {
-    Write-JujuWarning "Enable ServiceLogonRight for $Username"
-
-    $tmp = New-TemporaryFile
-    secedit /export /cfg "$tmp.inf" | Out-Null
-    (gc -Encoding ascii "$tmp.inf") -replace '^SeServiceLogonRight .+', "`$0,$Username" | sc -Encoding ascii "$tmp.inf"
-    secedit /import /cfg "$tmp.inf" /db "$tmp.sdb" | Out-Null
-    secedit /configure /db "$tmp.sdb" /cfg "$tmp.inf" | Out-Null
-    rm $tmp* -ea 0
-}
-
 function External-AD-Join {
     $cfg = Get-JujuCharmConfig
     $ad_ip = $cfg['external-ad-ip']
@@ -824,7 +818,7 @@ function External-AD-Join {
     $domain_ou = $cfg['external-ad-ou']
     $domain_group = $cfg['external-ad-group']
     $service_account = $cfg['external-ad-service-account']
-    $credential = New-Object System.Management.Automation.PSCredential($username,$password)
+    $credential = New-Object System.Management.Automation.PSCredential("$username", $password)
 
     Write-JujuWarning "External AD -> Joining External AD domain: $domain"
     Install-WindowsFeatures -Features @('RSAT-AD-PowerShell')
@@ -839,28 +833,39 @@ function External-AD-Join {
         }
         if ($join_ad_result.HasSucceeded){
             Write-JujuWarning "External AD -> Joined AD domain, rebooting"
+            $computer = Get-ADComputer -Credential $credential (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\ComputerName\ComputerName").ComputerName
+            Add-ADGroupMember -Credential $credential -Identity $domain_group -Members $computer
             Invoke-JujuReboot -Now
         }
     }
 
+    Add-LocalGroupMember -Group Administrators -Member $username -ErrorAction SilentlyContinue
+    Add-LocalGroupMember -Group Administrators -Member "$domain\$service_account$" -ErrorAction SilentlyContinue
+    Grant-Privilege -User $username -Grant SeServiceLogonRight
+    Grant-Privilege -User "$domain\$service_account$" -Grant SeServiceLogonRight
+
+    Enable-WSManCredSSP -Role Server -Force | Out-Null
+    Enable-WSManCredSSP -Role Client -DelegateComputer '*' -Force | Out-Null
+
+    $credssp_script = Join-Path (Get-JujuCharmDir) "files\enable-credssp.ps1"
+    Start-ProcessAsUser -Command "$PShome\powershell.exe" `
+        -Arguments @("-NonInteractive","-executionpolicy", "Unrestricted", `
+        "-File", $credssp_script, "-Username", $username, "-Password", $cfg['external-ad-admin-pass'], `
+        "-DomainName", $domain) -Credential $credential
+
     $computer = Get-ADComputer -Credential $credential (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\ComputerName\ComputerName").ComputerName
 
-    Enable-WSManCredSSP -Role Client -DelegateComputer $computer.name -Force
-
     Write-JujuWarning "External AD -> adding service account"
-    Add-ADGroupMember -Credential $credential -Identity $domain_group -Members $computer
-#    Add-ADComputerServiceAccount -Identity $computer -ServiceAccount $service_account
-#    Set-ADServiceAccount -Identity $service_account -PrincipalsAllowedToRetrieveManagedPassword $computer
-    Invoke-Command -ComputerName $computer.name -Credential $credential -Authentication Credssp {Install-ADServiceAccount -Identity $service_account}
-#    Install-ADServiceAccount -Identity $service_account
-    Add-LocalGroupMember -Group Administrators -Member "$domain\$service_account$" -ErrorAction SilentlyContinue
-    Set-ADAccountControl -Identity $computer -TrustedToAuthForDelegation $true
-    Add-ServiceLogonRight("$domain\$service_account$")
+    Add-ADComputerServiceAccount -Credential $credential -Identity $computer -ServiceAccount $service_account
+    Set-ADServiceAccount -Credential $credential -Identity $service_account -PrincipalsAllowedToRetrieveManagedPassword $domain_group
+    Invoke-Command -ComputerName $computer.name -Credential $credential -Authentication Credssp {whoami; Install-ADServiceAccount -Identity $using:service_account -verbose}
+    Set-ADAccountControl -Credential $credential -Identity $computer -TrustedToAuthForDelegation $true
 
     Enable-LiveMigration
+    Set-VMHost -VirtualMachineMigrationAuthenticationType Kerberos
     foreach ($s in @("nova-compute", "neutron-hyperv-agent", "neutron-ovs-agent")) { 
         $service = gwmi win32_service -filter "name='$s'"
-        if ($service.startname.tolower() -ne "$domain\$service_account$".tolower()) {
+        if (($service) -and ($service.startname.tolower() -ne "$domain\$service_account$".tolower())) {
             if ($service.state -eq "Running"){
                 $service.stopservice()
                 $service.change($null,$null,$null,$null,$null,$null,"$domain\$service_account$",$null)
@@ -870,14 +875,28 @@ function External-AD-Join {
             }
         }
     }
-    $compute_nodes = Get-ADGroupMember -Identity $domain_group
+    $compute_nodes = Get-ADGroupMember -Identity $domain_group -Credential $credential
     if($compute_nodes -is [system.array]){
         foreach ($compute in $compute_nodes) {
             if ( $compute.name -ne $computer.name) {
-                Set-ADObject -Identity $computer -Add @{'msDS-AllowedToDelegateTo' = ('{0}/{1}' -f 'Microsoft Virtual System Migration Service', $compute.name) }
-                Set-ADObject -Identity $computer -Add @{'msDS-AllowedToDelegateTo' = ('{0}/{1}' -f 'cifs', $compute.name) }
+                Set-ADObject -Credential $credential -Identity $computer -Add @{'msDS-AllowedToDelegateTo' = ('{0}/{1}' -f 'Microsoft Virtual System Migration Service', $compute.name) }
+                Set-ADObject -Credential $credential -Identity $computer -Add @{'msDS-AllowedToDelegateTo' = ('{0}/{1}' -f 'cifs', $compute.name) }
             }
         }
+    }
+}
+
+function External-AD-Leave {
+    $cfg = Get-JujuCharmConfig
+    $domain = $cfg['external-ad-domain']
+    $username = "{0}\{1}" -f @($domain, $cfg['external-ad-admin-user'])
+    $password = $cfg['external-ad-admin-pass'] | ConvertTo-SecureString -asPlainText -Force
+    $credential = New-Object System.Management.Automation.PSCredential("$username", $password)
+
+    Write-JujuWarning "External AD -> Leaving External AD domain: $domain"
+    if (Confirm-IsInDomain $domain) {
+        $computer = Get-ADComputer -Credential $credential (Get-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\ComputerName\ComputerName").ComputerName
+        Remove-ADComputer -Identity $computer -Credential $credential -Confirm:$false -ErrorAction SilentlyContinue
     }
 }
 
