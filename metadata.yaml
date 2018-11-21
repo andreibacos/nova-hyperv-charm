@@ -53,3 +53,4 @@ requires:
     interface: free-rdp
   ad-sub:
     interface: ad-sub
+    scope: container

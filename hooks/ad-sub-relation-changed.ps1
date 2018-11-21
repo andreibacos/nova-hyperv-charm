@@ -28,8 +28,6 @@ try {
     $required = @{
         "service-account" = $null
         "domainName" = $null
-        "suffix" = $null
-        "netbiosname" = $null
     }
 
     $ctx = Get-JujuRelationContext -Relation "ad-sub" -RequiredContext $required

@@ -62,7 +62,8 @@ FunctionsToExport = @(
     "Invoke-MySQLDBRelationJoinedHook",
     "Invoke-WSFCRelationJoinedHook",
     "Invoke-S2DRelationJoinedHook",
-    "Invoke-CSVRelationJoinedHook")
+    "Invoke-CSVRelationJoinedHook",
+    "Enable-LiveMigration")
 
 # Cmdlets to export from this module
 CmdletsToExport = @()
