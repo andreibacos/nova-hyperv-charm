@@ -156,4 +156,9 @@ options:
     description: |
       When True will format and initialize all existing raw devices.
       It will not touch the OS drive or drives that already have a partition table.
-    
+  local-freerdp:
+    type: boolean
+    default: False
+    description: |
+      Enabling this means we have a local running freerdp-charm and 
+      would like to use it regardless of html5 URL received from relation.

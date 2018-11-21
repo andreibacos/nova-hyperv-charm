@@ -430,6 +430,13 @@ function Get-FreeRDPContext {
     if (!$ctx.Count) {
         return @{}
     }
+    
+    $cfg = Get-JujuCharmConfig
+    if ($cfg['local-freerdp']) {
+        $url = [System.Uri]$ctx["html5_proxy_base_url"]
+        $ip = Get-JujuUnitPrivateIP
+        $ctx["html5_proxy_base_url"] = "{0}://{1}:{2}" -f @($url.scheme, $ip, $url.port) 
+    }
     return $ctx
 }
 
