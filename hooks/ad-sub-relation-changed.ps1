@@ -57,6 +57,7 @@ try {
             }
         }
     }
+    Invoke-ConfigChangedHook
 } catch {
     Write-HookTracebackToLog $_
     exit 1
