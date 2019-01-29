@@ -35,6 +35,26 @@ try {
             }
         }
     }
+
+    $ctx = Get-JujuRelation
+    
+    $domain = $ctx['ad-domain']
+    $domain_user = $ctx['ad-username']
+    $username = "{0}\{1}" -f @($domain, $domain_user)
+    $p = Get-UnmarshaledObject $ctx['ad-password'] | ConvertTo-SecureString -asPlainText -Force
+    $credential = New-Object System.Management.Automation.PSCredential($username, $p)
+
+    Write-JujuWarning "External AD -> Leaving External AD domain: $domain"
+    if (Confirm-IsInDomain $domain) {
+        try {
+            Remove-Computer -UnjoinDomaincredential $credential -PassThru -Verbose -Force
+            #Invoke-JujuReboot -Now
+        } catch {
+            Write-JujuWarning "Could not remove computer from AD, manual intervention may be needed"
+            Write-HookTracebackToLog $_
+        }
+    }
+
 } catch {
     Write-HookTracebackToLog $_
     exit 1

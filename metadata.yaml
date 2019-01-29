@@ -51,6 +51,5 @@ requires:
     interface: hgs
   free-rdp:
     interface: free-rdp
-  ad-sub:
-    interface: ad-sub
-    scope: container
+  ad-proxy:
+    interface: ad-proxy
