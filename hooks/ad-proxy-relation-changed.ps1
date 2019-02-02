@@ -40,11 +40,17 @@ try {
         'ad-service-account' = $null
     }
 
-    $ctx = Get-JujuRelationContext -Relation "ad-proxy" -RequiredContext $required
+    $optionalContext = @{
+        'ad-netbios-options' = $null
+    }
+
+    $ctx = Get-JujuRelationContext -Relation "ad-proxy" -RequiredContext $required -OptionalContext $optionalContext
     if (!$ctx.Count) {
         Write-JujuWarning "AD proxy relation data not received"
         exit 0
     }
+
+    Write-JujuWarning "ctx: $($ctx | out-string)"
 
     $ad_ip = $ctx['ad-ip']
     $domain = $ctx['ad-domain']
@@ -57,6 +63,12 @@ try {
     $domain_ou = $ctx['ad-ou']
 
     if (!((Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain)) {
+        
+        if ($ctx['ad-netbios-options']) {
+            set-ItemProperty HKLM:\SYSTEM\CurrentControlSet\services\NetBT\Parameters\Interfaces\tcpip* `
+                -Name NetbiosOptions -Value $ctx['ad-netbios-options']
+        }
+
         Set-DnsClientServerAddress -InterfaceAlias * -ServerAddresses $ad_ip
 
         if($domain_ou) {
