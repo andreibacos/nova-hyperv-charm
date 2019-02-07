@@ -772,7 +772,7 @@ function Invoke-InstallHook {
     
     $cfg = Get-JujuCharmConfig
     if ($cfg['format-raw-devices']) {
-        Get-Disk | Where partitionstyle -eq 'raw' | `
+        Get-Disk | Where {$_.partitionstyle -eq 'raw' -and $_.operationalstatus -eq 'online'} | `
         Initialize-Disk -PartitionStyle GPT -PassThru | `
         New-Partition -AssignDriveLetter -UseMaximumSize | `
         Format-Volume -FileSystem NTFS -Confirm:$false
