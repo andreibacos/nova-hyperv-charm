@@ -420,6 +420,44 @@ function Get-CharmServices {
     return $jujuCharmServices
 }
 
+function ip_in_subnet { 
+    param ( 
+        [parameter(Mandatory=$true)]
+        [Net.IPAddress] 
+        $ip, 
+
+        [parameter(Mandatory=$true)] 
+        $subnet
+    ) 
+
+    [Net.IPAddress]$ip2, $m = $subnet.split('/')
+
+    Switch -RegEx ($m) {
+        "^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$" {
+            $mask = [Net.IPAddress]$m
+        }
+        "^[\d]+$" {
+            $tip=([Convert]::ToUInt32($(("1" * $m).PadRight(32, "0")), 2))
+            $dotted = $( For ($i = 3; $i -gt -1; $i--) {
+                $r = $tip % [Math]::Pow(256, $i)
+                ($tip - $r) / [Math]::Pow(256, $i)
+                $tip = $r
+            } )
+        
+            $mask = [Net.IPAddress][String]::Join('.', $dotted)
+        }
+        default {
+            Fail-Json $result "Invalid subnet specified: $subnet"
+        }
+    }
+
+    if (($ip.address -band $mask.address) -eq ($ip2.address -band $mask.address)) {
+        return $true
+    } else {
+        return $false
+    } 
+}
+
 function Get-FreeRDPContext {
     Write-JujuWarning "Getting context from FreeRDP"
     $required = @{
@@ -433,8 +471,23 @@ function Get-FreeRDPContext {
     
     $cfg = Get-JujuCharmConfig
     if ($cfg['local-freerdp']) {
+        if ($cfg["os-rdp-network"]) {
+            $adapters = Get-NetIPAddress -addressfamily ipv4
+
+            foreach ($adapter in $adapters) {
+                if (ip_in_subnet -ip $adapter.ipaddress -subnet $cfg["os-rdp-network"]) {
+                    $ip = $adapter.ipaddress
+                    break
+                }
+            }
+        }
+
+        # fallback
+        if (!$ip) {
+            $ip = Get-JujuUnitPrivateIP
+        }
+
         $url = [System.Uri]$ctx["html5_proxy_base_url"]
-        $ip = Get-JujuUnitPrivateIP
         $ctx["html5_proxy_base_url"] = "{0}://{1}:{2}" -f @($url.scheme, $ip, $url.port) 
     }
     return $ctx

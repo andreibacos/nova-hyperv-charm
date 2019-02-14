@@ -162,3 +162,8 @@ options:
     description: |
       Enabling this means we have a local running freerdp-charm and 
       would like to use it regardless of html5 URL received from relation.
+  os-rdp-network:
+    type: string
+    description: |
+      Network used for RDP. This network must be reachable from your browser same as horizon.
+      Used when local-freerdp is true
