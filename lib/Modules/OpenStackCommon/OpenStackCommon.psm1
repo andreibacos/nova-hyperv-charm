@@ -21,7 +21,7 @@ Import-Module JujuHelper
 
 
 $DEFAULT_OPENSTACK_VERSION = 'queens'
-$SUPPORTED_OPENSTACK_RELEASES = @('newton', 'ocata', 'pike', 'queens')
+$SUPPORTED_OPENSTACK_RELEASES = @('newton', 'ocata', 'pike', 'queens', 'rocky', 'stein')
 $DEFAULT_JUJU_RESOURCE_CONTENT = "Cloudbase default Juju resource"
 
 # Nova constants
@@ -63,6 +63,26 @@ $NOVA_PRODUCT = @{
         'default_installer_urls' = @{
             'msi' = 'https://cloudbase.it/downloads/HyperVNovaCompute_Queens_17_0_0.msi#md5=78082d7b739e9a6580d280a368a3aa72'
             'zip' = 'https://cloudbase.it/downloads/HyperVNovaCompute_Queens_17_0_0.zip#md5=3f5c27673e8d3f95e34caa490bd74052'
+        }
+        'compute_driver' = 'compute_hyperv.driver.HyperVDriver'
+        'compute_cluster_driver' = 'compute_hyperv.cluster.driver.HyperVClusterDriver'
+    }
+    'rocky' = @{
+        'name' = 'OpenStack Hyper-V Compute Rocky'
+        'version' = '18.0.0'
+        'default_installer_urls' = @{
+            'msi' = 'https://cloudbase.it/downloads/HyperVNovaCompute_Rocky_18_0_3.msi#md5=7ab07a79617aa10e1141738e0e63fa99'
+            'zip' = 'https://cloudbase.it/downloads/HyperVNovaCompute_Rocky_18_0_3.msi#md5=7ab07a79617aa10e1141738e0e63fa99'
+        }
+        'compute_driver' = 'compute_hyperv.driver.HyperVDriver'
+        'compute_cluster_driver' = 'compute_hyperv.cluster.driver.HyperVClusterDriver'
+    }
+    'stein' = @{
+        'name' = 'OpenStack Hyper-V Compute Stein'
+        'version' = '19.0.0'
+        'default_installer_urls' = @{
+            'msi' = 'http://cloudbase.it/downloads/HyperVNovaCompute_Stein_19_0_0.msi#md5='
+            'zip' = 'http://cloudbase.it/downloads/HyperVNovaCompute_Stein_19_0_0.msi#md5='
         }
         'compute_driver' = 'compute_hyperv.driver.HyperVDriver'
         'compute_cluster_driver' = 'compute_hyperv.cluster.driver.HyperVClusterDriver'
