@@ -45,6 +45,17 @@ options:
       Enables the Hyper-V compute driver for clustering. This requires at least two Hyper-V compute
       joined to a cluster.
       NOTE: Available only in releases >= Mitaka
+  etcd-host:
+    type: string
+    description: |
+      The IP address or hostname for the ETCD service for use on Nova locking mechanism.
+      For now, Nova only works with http endpoints. Only ETCD3 is supported
+      This is mandatory when using the cluster driver
+  etcd-port:
+    type: int
+    default: 2789
+    description: |
+      The port used for communicating with etcd.
   csv-performance-size:
     type: int
     description: |
@@ -128,6 +139,11 @@ options:
       This flag is needed to support live migration to hosts with different
       CPU features and checked during instance creation in order to limit
       the CPU features used by the instance.
+  cross-az-attach:
+    type: boolean
+    default: True
+    description: |
+      Allow Nova or not to attach Cinder volumes that are not in the same AZ
   change-hostname:
     type: boolean
     default: False
