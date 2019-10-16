@@ -128,6 +128,12 @@ options:
       Neutron agent to use. Valid options are:
         * hyperv
         * ovs
+  vxlan-udp-port:
+    type: int
+    description: |
+      Port for VXLAN tunnels. If the value is not set, the default port '4789' is
+      used. Usefull when default vxlan udp port is already used.
+      This value must be the same as neutron-gateway
   max-concurrent-live-migrations:
     type: int
     default: 1
