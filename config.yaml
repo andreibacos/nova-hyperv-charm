@@ -45,6 +45,11 @@ options:
       Enables the Hyper-V compute driver for clustering. This requires at least two Hyper-V compute
       joined to a cluster.
       NOTE: Available only in releases >= Mitaka
+  enable-multipath-io:
+    type: boolean
+    default: False
+    description: |
+      Enable MPIO feature. This setting requires a restart.
   etcd-host:
     type: string
     description: |
