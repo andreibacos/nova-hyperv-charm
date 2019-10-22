@@ -63,7 +63,7 @@ function Enable-MPIO {
     if (!$cfg['enable-multipath-io']) {
         return $false
     }
-    $mpioState = Get-WindowsOptionalFeature –Online –FeatureName MultiPathIO
+    $mpioState = Get-WindowsOptionalFeature -Online -FeatureName MultiPathIO
     if ($mpioState.State -like "Enabled") {
         Write-JujuWarning "MPIO already enabled"
         $autoClaim = Get-MSDSMAutomaticClaimSettings
@@ -73,7 +73,7 @@ function Enable-MPIO {
         return $false
     }
     Write-JujuWarning "Enabling MultiPathIO feature"
-    Enable-WindowsOptionalFeature –Online –FeatureName MultiPathIO -NoRestart -ErrorAction SilentlyContinue
+    Enable-WindowsOptionalFeature -Online -FeatureName MultiPathIO -NoRestart -ErrorAction SilentlyContinue
     return $true
 }
 
