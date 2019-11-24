@@ -155,6 +155,14 @@ options:
     default: True
     description: |
       Allow Nova or not to attach Cinder volumes that are not in the same AZ
+  html5-console-url:
+    type: string
+    description: |
+      Set a custom URL for the RDP console. The string is in the form of
+      http://hostname:port
+      The port must match the one on the free-rdp charm if no port mapping
+      is being done.
+      If not set, it will be taken from the Free-RDP relation.
   change-hostname:
     type: boolean
     default: False

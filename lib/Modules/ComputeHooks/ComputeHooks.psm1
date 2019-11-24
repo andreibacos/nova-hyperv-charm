@@ -473,6 +473,11 @@ function Get-FreeRDPContext {
     if (!$ctx.Count) {
         return @{}
     }
+    $cfg = Get-JujuCharmConfig
+    $rdpBaseUrl = $cfg['html5-console-url']
+    if ($rdpBaseUrl) {
+        $ctx['html5_proxy_base_url'] = $rdpBaseUrl
+    }
     return $ctx
 }
 
