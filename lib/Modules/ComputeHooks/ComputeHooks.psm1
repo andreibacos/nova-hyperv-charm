@@ -137,9 +137,8 @@ function Start-ConfigureVMSwitch {
             if($i.AllowManagementOS -ne $managementOS) {
                 $agentRestart = $true
                 Set-VMSwitch -Name $vmSwitchName -AllowManagementOS $managementOS -Confirm:$false
-                $i.AllowManagementOS = $managementOS
             }
-            if($i.AllowManagementOS) {
+            if($i.AllowManagementOS -eq $True) {
                 $managOSAdapter = Get-NetAdapter -Name "vEthernet ($vmSwitchName)" -ErrorAction SilentlyContinue
                 if ($managOSAdapter) {
                 # Rename the managementOS adapter to the vmswitch name so that ovs bridge inherits the mac address
