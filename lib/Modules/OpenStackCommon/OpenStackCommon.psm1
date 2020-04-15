@@ -104,7 +104,7 @@ $NEUTRON_OVS_AGENT_SERVICE_NAME = "neutron-ovs-agent"
 $env:OVS_RUNDIR = Join-Path $env:ProgramData "openvswitch"
 $OVS_VSWITCHD_SERVICE_NAME = "ovs-vswitchd"
 $OVS_OVSDB_SERVICE_NAME = "ovsdb-server"
-$OVS_JUJU_BR = "juju-br"
+$OVS_DEFAULT_BRIDGE_NAME = "juju-br"
 $OVS_INSTALL_DIR = Join-Path ${env:ProgramFiles} "Cloudbase Solutions\Open vSwitch"
 $OVS_VSCTL = Join-Path $OVS_INSTALL_DIR "bin\ovs-vsctl.exe"
 $OVS_PRODUCT_NAME = 'Cloudbase Open vSwitch'
@@ -461,6 +461,17 @@ function Get-RabbitMQContext {
     }
     $data["rabbit_host"] = $ctx["hostname"]
     $data["rabbit_password"] = $ctx["password"]
+    $rids = Get-JujuRelationIds -Relation "amqp"
+	foreach ($rid in $rids) {
+		$units = Get-JujuRelatedUnits -RelationID $rid
+		foreach ($unit in $units) {
+			$relationData = Get-JujuRelation -RelationID $rid -Unit $unit
+			$data["rabbit_hosts"] = @($relationData['hostname'])
+			$rabbitConnection += @("$($data['rabbit_userid']):$($relationData['password'])@$($relationData['hostname']):5672")
+		}
+	}
+	$rabbitConnection = [string]::Join(',',$rabbitConnection)
+	$data["transport_url"] = "rabbit://$rabbitConnection/$($data["rabbit_virtual_host"])"
     return $data
 }
 

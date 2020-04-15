@@ -58,6 +58,25 @@ function Install-Prerequisites {
     return $rebootNeeded
 }
 
+function Enable-MPIO {
+    $cfg = Get-JujuCharmConfig
+    if (!$cfg['enable-multipath-io']) {
+        return $false
+    }
+    $mpioState = Get-WindowsOptionalFeature -Online -FeatureName MultiPathIO
+    if ($mpioState.State -like "Enabled") {
+        Write-JujuWarning "MPIO already enabled"
+        $autoClaim = Get-MSDSMAutomaticClaimSettings
+        if (!$autoclaim.iSCSI) {
+            Enable-MSDSMAutomaticClaim -BusType iSCSI -ErrorAction SilentlyContinue
+        }
+        return $false
+    }
+    Write-JujuWarning "Enabling MultiPathIO feature"
+    Enable-WindowsOptionalFeature -Online -FeatureName MultiPathIO -NoRestart -ErrorAction SilentlyContinue
+    return $true
+}
+
 function New-ExeServiceWrapper {
     $pythonDir = Get-PythonDir -InstallDir $NOVA_INSTALL_DIR
     $python = Join-Path $pythonDir "python.exe"
@@ -82,14 +101,14 @@ function Enable-MSiSCSI {
 }
 
 function Get-DataPorts {
+    $cfg = Get-JujuCharmConfig
+    $managementOS = $cfg['vmswitch-management']
     $netType = Get-NetType
     if ($netType -eq "ovs") {
         Write-JujuWarning "Fetching OVS data ports"
         $dataPorts = Get-OVSDataPorts
-        return @($dataPorts, $false)
+        return @($dataPorts, $managementOS)
     }
-    $cfg = Get-JujuCharmConfig
-    $managementOS = $cfg['vmswitch-management']
     Write-JujuWarning "Fetching data port from config"
     $dataPorts = Get-InterfaceFromConfig
     if (!$dataPorts) {
@@ -119,6 +138,13 @@ function Start-ConfigureVMSwitch {
                 $agentRestart = $true
                 Set-VMSwitch -Name $vmSwitchName -AllowManagementOS $managementOS -Confirm:$false
             }
+            if($i.AllowManagementOS -eq $True) {
+                $managOSAdapter = Get-NetAdapter -Name "vEthernet ($vmSwitchName)" -ErrorAction SilentlyContinue
+                if ($managOSAdapter) {
+                # Rename the managementOS adapter to the vmswitch name so that ovs bridge inherits the mac address
+                    Rename-NetAdapter -Name $managOSAdapter.Name -NewName $vmSwitchName
+                }
+            }
             if($agentRestart) {
                 $netType = Get-NetType
                 if($netType -eq "ovs") {
@@ -139,6 +165,9 @@ function Start-ConfigureVMSwitch {
     }
     Write-JujuWarning "Adding new vmswitch: $vmSwitchName"
     New-VMSwitch -Name $vmSwitchName -NetAdapterName $dataPort.Name -AllowManagementOS $managementOS | Out-Null
+    if ($managementOS) {
+        Rename-NetAdapter -Name "vEthernet ($vmSwitchName)" -NewName $vmSwitchName
+    }
 }
 
 function Install-NovaFromZip {
@@ -181,7 +210,21 @@ function Install-NovaFromMSI {
         $NEUTRON_HYPERV_AGENT_SERVICE_NAME,
         $NEUTRON_OVS_AGENT_SERVICE_NAME
     )
-    Remove-WindowsServices -Names $serviceNames
+    foreach($serviceName in $serviceNames) {
+        $service = Get-ManagementObject -ClassName "Win32_Service" -Filter "Name='$serviceName'"
+        if($service) {
+            Stop-Service $serviceName -Force
+        }
+    }
+    # Add a trigger to neutron-ovs-agent so it does not start before ovs-vswitch.
+    # This is necessary because neutron-ovs-agent has dependencies of ovs-vswitchd.
+    # ovs-vswitchd is started on demand by a wmiprovider trigger (it waits for the wmi to be available so it can talk to vmswitch)
+    # Because neutron-ovs-agent starts earlier than ovs-vswitchd, the task manager
+    # starts ovs-vswitchd on neutron-ovs-agent start because it's a dependent service for the latter. In doing so, it ignores
+    # the startup trigger configured on ovs-vswitchd. To overcome this, we will set the same start trigger present on ovs-vswitchd
+    # to neutron-ovs-agent
+    Start-ExternalCommand { sc.exe config $NEUTRON_OVS_AGENT_SERVICE_NAME start= demand } | Out-Null
+    Start-ExternalCommand { sc.exe triggerinfo $NEUTRON_OVS_AGENT_SERVICE_NAME "start/strcustom/6066F867-7CA1-4418-85FD-36E3F9C0600C/VmmsWmiEventProvider" } | Out-Null
 }
 
 function Install-Nova {
@@ -272,12 +315,10 @@ function Start-ConfigureNeutronAgent {
         }
         "ovs" {
             Stop-Service $services["neutron"]["service"]
-            Disable-Service $services["neutron"]["service"]
             Install-OVS
             Start-ConfigureVMSwitch
-            Enable-OVS
+            Enable-OVSExtension
             New-OVSInternalInterfaces
-            Enable-Service $services["neutron-ovs"]["service"]
         }
         Default {
             Throw "Invalid network type: $netType"
@@ -287,15 +328,16 @@ function Start-ConfigureNeutronAgent {
 
 function Restart-Neutron {
     $serviceName = Get-NeutronServiceName
-    Stop-Service $serviceName
-    Start-Service $serviceName
     $netType = Get-NetType
     if($netType -eq "ovs") {
         $status = (Get-Service -Name $OVS_VSWITCHD_SERVICE_NAME).Status
         if($status -eq [System.ServiceProcess.ServiceControllerStatus]::Running) {
-            Restart-Service $OVS_VSWITCHD_SERVICE_NAME | Out-Null
+            Stop-Service -Force $OVS_VSWITCHD_SERVICE_NAME | Out-Null
+            Start-Service $OVS_VSWITCHD_SERVICE_NAME
         }
     }
+    Stop-Service $serviceName
+    Start-Service $serviceName
 }
 
 function Restart-Nova {
@@ -429,6 +471,11 @@ function Get-FreeRDPContext {
     $ctx = Get-JujuRelationContext -Relation "free-rdp" -RequiredContext $required
     if (!$ctx.Count) {
         return @{}
+    }
+    $cfg = Get-JujuCharmConfig
+    $rdpBaseUrl = $cfg['html5-console-url']
+    if ($rdpBaseUrl) {
+        $ctx['html5_proxy_base_url'] = $rdpBaseUrl
     }
     return $ctx
 }
@@ -771,8 +818,9 @@ function Invoke-InstallHook {
         Format-Volume -FileSystem NTFS -Confirm:$false
     }
     
+    $mpioReboot = Enable-MPIO
     $prereqReboot = Install-Prerequisites
-    if ($prereqReboot) {
+    if ($prereqReboot -Or $mpioReboot) {
         Invoke-JujuReboot -Now
     }
     Set-HyperVUniqueMACAddressesPool
@@ -793,6 +841,10 @@ function Invoke-StopHook {
 }
 
 function Invoke-ConfigChangedHook {
+    $mpioReboot = Enable-MPIO
+    if ($mpioReboot) {
+        Invoke-JujuReboot -Now
+    }
     Start-UpgradeOpenStackVersion
     New-CharmServices
     Enable-MSiSCSI
